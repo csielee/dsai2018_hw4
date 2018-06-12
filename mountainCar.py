@@ -6,9 +6,9 @@ import numpy as np
 import random
 import matplotlib.pyplot as plt
 
-gamma = 0.95
+gamma = 0.7
 alpha = 0.5
-r_choose = 0.0
+r_choose = 0.01
 
 # Q(s) = Q(s) + alpha * (reward + gamma*argmax(Q(s')) - Q(s))
 # observation (position, velocity)
@@ -17,7 +17,8 @@ r_choose = 0.0
 # state table
 state_number = 20
 action_number = 3
-states = np.zeros([state_number*2,action_number])
+
+needRender = False
 
 def observationToState(ob, e):
     position = ob[0]
@@ -34,97 +35,149 @@ def observationToState(ob, e):
 
 env = gym.make('MountainCar-v0')
 env._max_episode_steps = 1000
-#print(env)
-cur_state = 0
-i_episode = 0
-train_finish = False
-x = list()
-y = list()
-while(not train_finish):
+
+states_finish = np.zeros([state_number*2,action_number])
+
+def RL(rewardMethod):
+    states = np.zeros([state_number*2,action_number])
+    cur_state = 0
+    i_episode = 0
+
+    episode_size = 1000
+
+    
+    min_f_s = env._max_episode_steps
+
+    timeepisode = list()
+    finishsteps = list()
+    while(i_episode < episode_size):
+        observation = env.reset()
+        if needRender and i_episode % 100 == 0:
+            env.render()
+    
+        # init state
+        cur_state = observationToState(observation, env.env)
+    
+        if i_episode % 100 == 0:
+            print("start {} episode !".format(i_episode))
+    
+        for t in range(env._max_episode_steps):
+            if needRender and i_episode % 100 == 0:
+                env.render()
+        
+            # choose action & random choose
+            tmp = random.random()
+            if (tmp >= r_choose):
+                action = np.argmax(states[cur_state])
+            else:
+                action = random.randint(0,2)
+        
+            # step
+            observation, reward, done, info = env.step(action)
+            
+            R = rewardMethod(observation, reward, done, t+1)
+        
+            # update state
+            tmp_state = observationToState(observation, env.env)
+            tmp_action = np.argmax(states[tmp_state])
+        
+            # update value
+            states[cur_state][action] = states[cur_state][action] + alpha*(R + gamma*states[tmp_state][tmp_action] - states[cur_state][action])
+            cur_state = tmp_state
+
+            if done:
+                timeepisode.append(i_episode)
+                finishsteps.append(t+1)
+                if t+1 < env._max_episode_steps and t+1 < min_f_s:
+                    # record state
+                    min_f_s = t+1
+                    global states_finish
+                    states_finish = states.copy()
+                break
+    
+        i_episode = i_episode + 1
+    print("finish {} episode!".format(episode_size))
+    
+    return (timeepisode, finishsteps)
+
+def RLTest():
+    cur_state = 0
+    
     observation = env.reset()
     env.render()
+
     # init state
     cur_state = observationToState(observation, env.env)
-    
-    if i_episode % 20 == 0:
-        #ret = input("start {} episode !".format(i_episode))
-        print("start {} episode !".format(i_episode))
-        plt.plot(x,y)
-        plt.show()
-        ret = 'c'
-        if ret == 'e':
-            break
-    
+
     for t in range(env._max_episode_steps):
         env.render()
-        #print(observation)
-        #action = env.action_space.sample()
-        #if observation[1] >= 0:
-        #    action = 2
-        #else:
-        #    action = 0
-        
+    
         # choose action & random choose
-        tmp = random.random()
-        if (tmp >= r_choose):
-            action = np.argmax(states[cur_state])
-        else:
-            action = random.randint(0,2)
-        #input("action : {}".format(action))
+        action = np.argmax(states_finish[cur_state])
+    
+        # step
         observation, reward, done, info = env.step(action)
+    
         # update state
         tmp_state = observationToState(observation, env.env)
-        tmp_action = np.argmax(states[tmp_state])
-        #input("tmp action : {}".format(tmp_action))
-        # update value
-        states[cur_state][action] = states[cur_state][action] + alpha*(reward + gamma*states[tmp_state][tmp_action] - states[cur_state][action])
         cur_state = tmp_state
 
         if done:
-            print("Episode {} finished after {} timesteps".format(i_episode, t+1))
-            print(states)
-            x.append(i_episode)
-            y.append(t+1)
-            #if t+1 < env._max_episode_steps:
-                #input('realy finish!')
-                #train_finish = True
-            break
-            
-        
-    i_episode = i_episode + 1
-
-print("train ending!")
-input("test starting!")
-i_episode = 0
-while(1):
-    observation = env.reset()
-    env.render()
-    # init state
-    cur_state = observationToState(observation, env.env)
-    
-    ret = input("start test {} episode !".format(i_episode))
-    if ret == 'e':
-        break
-    
-    for t in range(env._max_episode_steps):
-        env.render()
-        
-        # choose action & random choose
-        tmp = random.random()
-        if (tmp >= r_choose):
-            action = np.argmax(states[cur_state])
-        else:
-            action = random.randint(0,2)
-        
-        observation, reward, done, info = env.step(action)
-        # update state
-        cur_state = observationToState(observation, env.env)
-        if done:
-            print("Episode {} finished after {} timesteps".format(i_episode, t+1))
             if t+1 < env._max_episode_steps:
-                print('realy finish!')
+                print("done!!!")
             break
+    return
+
+def originReward(observation, reward, done, step):
+    return reward
+
+def originRewardWithDone(observation, reward, done, step):
+    if done and step < env._max_episode_steps:
+        return 5
+    else:
+        return reward
     
-    i_episode = i_episode + 1
+def calEngery(ob):
+    p = ob[0]
+    v = ob[1]
+    return (math.sin(3 * p)*.45+.55) + v * v
+
+def customRewardwow(ob):
+    #e = calEngery(ob)
+    #maxe = calEngery((0.527,0.07))
+    #mine = calEngery((-0.527,0))
+    #tmp = (maxe + mine)/2
+    #e -= tmp
+    #e *= 2
+    maxr = 1
+    minr = -1
+    maxp = 0.6
+    minp = -1.2
+    p = ob[0]
+    e = (p - minp)/(maxp-minp)
+    e = (e * (maxr - minr)) + minr
+    
+    #return e*100 + p
+    return e
+    
+    
+def customReward(observation, reward, done, step):
+    return customRewardwow(observation)
+
+def customRewardWithDone(observation, reward, done, step):
+    if done and step < env._max_episode_steps:
+        return 5
+    else:
+        return customRewardwow(observation)
+
+print("learning start")
+(x,y) = RL(customRewardWithDone)
+
+while(1):
+    ret = input("test?(y/n)")
+    if ret == 'n':
+        break
+    RLTest()
+    
 
 env.close()
